@@ -30,19 +30,22 @@ const storageService = new StorageService();
 
 // Security middleware
 app.use(helmet({
-  contentSecurityPolicy: {
-    directives: {
-      defaultSrc: ["'self'"],
-      scriptSrc: ["'self'", "'unsafe-inline'", "https://cdn.socket.io", "https://unpkg.com"],
-      styleSrc: ["'self'", "'unsafe-inline'"],
-      imgSrc: ["'self'", "data:", "https:"],
-      connectSrc: ["'self'", "ws:", "wss:"],
-      fontSrc: ["'self'"],
-      objectSrc: ["'none'"],
-      mediaSrc: ["'self'", "data:", "blob:"],
-      frameSrc: ["'none'"],
-    },
-  },
+        contentSecurityPolicy: {
+          directives: {
+            defaultSrc: ["'self'"],
+            scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'", "https://cdn.socket.io", "https://unpkg.com", "https://cdn.jsdelivr.net"],
+            scriptSrcElem: ["'self'", "'unsafe-inline'", "https://cdn.socket.io", "https://unpkg.com", "https://cdn.jsdelivr.net"],
+            scriptSrcAttr: ["'none'"],
+            workerSrc: ["'self'", "blob:"],
+            connectSrc: ["'self'", "ws:", "wss:", "blob:", "https://kmp1.picovoice.net"],
+            styleSrc: ["'self'", "'unsafe-inline'"],
+            imgSrc: ["'self'", "data:", "https:"],
+            fontSrc: ["'self'"],
+            objectSrc: ["'none'"],
+            mediaSrc: ["'self'", "data:", "blob:"],
+            frameSrc: ["'none'"],
+          },
+        },
 }));
 
 // CORS configuration
@@ -67,7 +70,23 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // Static files
-app.use(express.static(path.join(__dirname, '../public')));
+app.use(express.static(path.join(__dirname, '../public'), {
+  setHeaders: (res, path) => {
+    if (path.endsWith('.js') || path.endsWith('.mjs')) {
+      res.setHeader('Content-Type', 'application/javascript');
+      // Add no-cache for hey_voxe.js to ensure fresh base64 model
+      if (path.includes('hey_voxe.js')) {
+        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+      }
+    } else if (path.endsWith('.wasm')) {
+      res.setHeader('Content-Type', 'application/wasm');
+    } else if (path.endsWith('.map')) {
+      res.setHeader('Content-Type', 'application/json');
+    } else if (path.endsWith('.pv') || path.endsWith('.ppn')) {
+      res.setHeader('Content-Type', 'application/octet-stream');
+    }
+  }
+}));
 
 // Multer configuration for audio uploads
 const storage = multer.memoryStorage();
@@ -255,6 +274,28 @@ io.on('connection', (socket) => {
       console.error('Error processing real-time speech:', error);
       socket.emit('error', { 
         message: error instanceof Error ? error.message : 'Processing failed' 
+      });
+    }
+  });
+
+  // Handle TTS requests
+  socket.on('tts-request', async (data: { text: string }) => {
+    try {
+      console.log('Received TTS request:', data.text);
+      
+      // Generate TTS audio
+      const audioResponse = await speechService.synthesizeSpeech(data.text);
+      
+      // Send TTS audio back to client
+      socket.emit('tts-result', {
+        text: data.text,
+        audioResponse: audioResponse.toString('base64')
+      });
+      
+    } catch (error) {
+      console.error('Error processing TTS request:', error);
+      socket.emit('error', { 
+        message: error instanceof Error ? error.message : 'TTS processing failed' 
       });
     }
   });

@@ -26,6 +26,8 @@ To enable the "Hey Voxe" wake word detection, you need to get a free Porcupine a
 npm run dev
 ```
 
+The server will run on `http://localhost:8080`
+
 ## How It Works
 
 - **Wake Word Detection**: The app continuously listens for "Hey Voxe"
