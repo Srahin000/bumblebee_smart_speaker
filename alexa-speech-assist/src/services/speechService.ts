@@ -3,6 +3,19 @@ import { TextToSpeechClient } from '@google-cloud/text-to-speech';
 import { VertexAI } from '@google-cloud/vertexai';
 import { StorageService } from './storageService';
 
+interface ConversationMessage {
+  role: 'user' | 'assistant';
+  content: string;
+  timestamp: Date;
+}
+
+interface ConversationSession {
+  sessionId: string;
+  messages: ConversationMessage[];
+  createdAt: Date;
+  lastActivity: Date;
+}
+
 export class SpeechService {
   private speechClient: SpeechClient;
   private ttsClient: TextToSpeechClient;
@@ -11,11 +24,13 @@ export class SpeechService {
   private projectId: string;
   private location: string;
   private model: string;
+  private conversationSessions: Map<string, ConversationSession>;
 
   constructor() {
     this.projectId = process.env.GCP_PROJECT_ID || '';
     this.location = process.env.GCP_LOCATION || 'us-central1';
     this.model = process.env.VERTEX_MODEL || 'gemini-2.5-flash-lite';
+    this.conversationSessions = new Map();
     
     console.log('Initializing SpeechService with:');
     console.log('- Project ID:', this.projectId);
@@ -31,6 +46,111 @@ export class SpeechService {
     this.storageService = new StorageService();
     
     console.log('Vertex AI initialized successfully');
+  }
+
+  /**
+   * Create a new conversation session
+   */
+  createConversationSession(sessionId?: string): string {
+    const id = sessionId || `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const session: ConversationSession = {
+      sessionId: id,
+      messages: [],
+      createdAt: new Date(),
+      lastActivity: new Date()
+    };
+    
+    this.conversationSessions.set(id, session);
+    console.log(`Created new conversation session: ${id}`);
+    return id;
+  }
+
+  /**
+   * Get or create a conversation session
+   */
+  getOrCreateSession(sessionId?: string): string {
+    if (sessionId && this.conversationSessions.has(sessionId)) {
+      const session = this.conversationSessions.get(sessionId)!;
+      session.lastActivity = new Date();
+      return sessionId;
+    }
+    return this.createConversationSession(sessionId);
+  }
+
+  /**
+   * Add a message to a conversation session
+   */
+  addMessageToSession(sessionId: string, role: 'user' | 'assistant', content: string): void {
+    const session = this.conversationSessions.get(sessionId);
+    if (!session) {
+      throw new Error(`Session ${sessionId} not found`);
+    }
+
+    const message: ConversationMessage = {
+      role,
+      content,
+      timestamp: new Date()
+    };
+
+    session.messages.push(message);
+    session.lastActivity = new Date();
+
+    // Keep only the last 20 messages to prevent context from getting too long
+    if (session.messages.length > 20) {
+      session.messages = session.messages.slice(-20);
+    }
+
+    console.log(`Added ${role} message to session ${sessionId}: "${content.substring(0, 50)}..."`);
+  }
+
+  /**
+   * Get conversation history for a session
+   */
+  getConversationHistory(sessionId: string): ConversationMessage[] {
+    const session = this.conversationSessions.get(sessionId);
+    return session ? session.messages : [];
+  }
+
+  /**
+   * Clear conversation history for a session
+   */
+  clearConversationHistory(sessionId: string): void {
+    const session = this.conversationSessions.get(sessionId);
+    if (session) {
+      session.messages = [];
+      session.lastActivity = new Date();
+      console.log(`Cleared conversation history for session: ${sessionId}`);
+    }
+  }
+
+  /**
+   * Get all active sessions
+   */
+  getActiveSessions(): ConversationSession[] {
+    return Array.from(this.conversationSessions.values());
+  }
+
+  /**
+   * Clean up old sessions (older than 1 hour)
+   */
+  cleanupOldSessions(): void {
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+    const sessionsToDelete: string[] = [];
+
+    for (const [sessionId, session] of this.conversationSessions.entries()) {
+      if (session.lastActivity < oneHourAgo) {
+        sessionsToDelete.push(sessionId);
+      }
+    }
+
+    sessionsToDelete.forEach(sessionId => {
+      this.conversationSessions.delete(sessionId);
+      console.log(`Cleaned up old session: ${sessionId}`);
+    });
+
+    if (sessionsToDelete.length > 0) {
+      console.log(`Cleaned up ${sessionsToDelete.length} old conversation sessions`);
+    }
   }
 
   /**
@@ -153,10 +273,17 @@ export class SpeechService {
   }
 
   /**
-   * Generate response using Vertex AI Gemini 2.5
+   * Generate response using Vertex AI Gemini 2.5 with conversation context
    */
-  async generateResponse(userMessage: string): Promise<string> {
+  async generateResponse(userMessage: string, sessionId?: string): Promise<string> {
     try {
+      // Get or create session and add user message
+      const currentSessionId = this.getOrCreateSession(sessionId);
+      this.addMessageToSession(currentSessionId, 'user', userMessage);
+
+      // Get conversation history
+      const conversationHistory = this.getConversationHistory(currentSessionId);
+      
       // Try Gemini 2.5 models in order of preference
       const modelVersions = [
         'gemini-2.5-flash-lite',
@@ -179,9 +306,19 @@ export class SpeechService {
             },
           });
 
+          // Build conversation context
+          let conversationContext = '';
+          if (conversationHistory.length > 1) {
+            // Include recent conversation history (excluding the current user message)
+            const recentHistory = conversationHistory.slice(0, -1);
+            conversationContext = recentHistory.map(msg => 
+              `${msg.role === 'user' ? 'User' : 'Alexa'}: ${msg.content}`
+            ).join('\n') + '\n\n';
+          }
+
           const prompt = `You are Alexa, a friendly AI assistant designed for kids! Respond to the user's message in a warm, encouraging, and conversational way. Use contractions (like "I'm", "you're", "it's") and natural punctuation including questions and exclamations. Keep responses short, positive, and engaging - like talking to a young friend. Avoid complex words and make it sound natural when spoken aloud.
 
-User: ${userMessage}
+${conversationContext ? `Previous conversation:\n${conversationContext}` : ''}User: ${userMessage}
 
 Alexa:`;
 
@@ -198,8 +335,14 @@ Alexa:`;
             text = (response as any).text;
           }
           
+          const finalResponse = text || 'I apologize, but I couldn\'t generate a response.';
+          
+          // Add assistant response to conversation history
+          this.addMessageToSession(currentSessionId, 'assistant', finalResponse);
+          
           console.log(`Successfully used model: ${modelVersion}`);
-          return text || 'I apologize, but I couldn\'t generate a response.';
+          console.log(`Session ${currentSessionId} now has ${conversationHistory.length + 1} messages`);
+          return finalResponse;
         } catch (modelError) {
           console.log(`Model ${modelVersion} failed:`, (modelError as Error).message);
           lastError = modelError;
@@ -291,12 +434,13 @@ Alexa:`;
   /**
    * Process complete voice interaction: transcribe -> generate response -> synthesize
    */
-  async processVoiceInteraction(audioBuffer: Buffer, sampleRate: number = 48000): Promise<{
+  async processVoiceInteraction(audioBuffer: Buffer, sampleRate: number = 48000, sessionId?: string): Promise<{
     transcription: string;
     response: string;
     audioResponse: Buffer;
     inputAudioUrl?: string;
     outputAudioUrl?: string;
+    sessionId: string;
   }> {
     try {
       console.log(`Processing voice interaction with ${audioBuffer.length} bytes of audio`);
@@ -331,15 +475,17 @@ Alexa:`;
           response: fallbackResponse,
           audioResponse: audioResponse,
           inputAudioUrl,
+          sessionId: this.getOrCreateSession(sessionId),
         };
       }
 
-      // Step 2: Generate AI response
+      // Step 2: Generate AI response with conversation context
       let response;
       let audioResponse;
+      const currentSessionId = this.getOrCreateSession(sessionId);
       
       try {
-        response = await this.generateResponse(transcription);
+        response = await this.generateResponse(transcription, currentSessionId);
         audioResponse = await this.synthesizeSpeech(response);
       } catch (aiError) {
         console.log('AI response failed, using fallback:', (aiError as Error).message);
@@ -364,6 +510,7 @@ Alexa:`;
         audioResponse,
         inputAudioUrl,
         outputAudioUrl,
+        sessionId: currentSessionId,
       };
     } catch (error) {
       console.error('Error processing voice interaction:', error);

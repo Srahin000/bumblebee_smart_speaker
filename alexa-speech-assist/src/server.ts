@@ -123,16 +123,16 @@ app.get('/api/porcupine-key', (req, res) => {
       message: 'Please set PORCUPINE_ACCESS_KEY in your .env file'
     });
   }
-  res.json({ accessKey });
+  return res.json({ accessKey });
 });
 
 // Storage management endpoints
 app.get('/api/storage/stats', async (req, res) => {
   try {
     const stats = await storageService.getStorageStats();
-    res.json(stats);
+    return res.json(stats);
   } catch (error) {
-    res.status(500).json({ 
+    return res.status(500).json({ 
       error: 'Failed to get storage stats',
       message: (error as Error).message 
     });
@@ -142,9 +142,9 @@ app.get('/api/storage/stats', async (req, res) => {
 app.get('/api/storage/files', async (req, res) => {
   try {
     const files = await storageService.listAudioFiles();
-    res.json({ files });
+    return res.json({ files });
   } catch (error) {
-    res.status(500).json({ 
+    return res.status(500).json({ 
       error: 'Failed to list audio files',
       message: (error as Error).message 
     });
@@ -155,9 +155,9 @@ app.get('/api/storage/signed-url/:filePath', async (req, res) => {
   try {
     const { filePath } = req.params;
     const signedUrl = await storageService.getSignedUrl(filePath);
-    res.json({ signedUrl });
+    return res.json({ signedUrl });
   } catch (error) {
-    res.status(500).json({ 
+    return res.status(500).json({ 
       error: 'Failed to generate signed URL',
       message: (error as Error).message 
     });
@@ -178,10 +178,61 @@ app.get('/api/storage/audio-files', async (req, res) => {
         };
       })
     );
-    res.json({ files: filesWithUrls });
+    return res.json({ files: filesWithUrls });
   } catch (error) {
-    res.status(500).json({ 
+    return res.status(500).json({ 
       error: 'Failed to get audio files with URLs',
+      message: (error as Error).message 
+    });
+  }
+});
+
+// Conversation management endpoints
+app.post('/api/conversation/session', (req, res) => {
+  try {
+    const sessionId = speechService.createConversationSession();
+    return res.json({ sessionId });
+  } catch (error) {
+    return res.status(500).json({ 
+      error: 'Failed to create conversation session',
+      message: (error as Error).message 
+    });
+  }
+});
+
+app.get('/api/conversation/session/:sessionId/history', (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const history = speechService.getConversationHistory(sessionId);
+    return res.json({ sessionId, history });
+  } catch (error) {
+    return res.status(500).json({ 
+      error: 'Failed to get conversation history',
+      message: (error as Error).message 
+    });
+  }
+});
+
+app.delete('/api/conversation/session/:sessionId', (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    speechService.clearConversationHistory(sessionId);
+    return res.json({ message: 'Conversation history cleared', sessionId });
+  } catch (error) {
+    return res.status(500).json({ 
+      error: 'Failed to clear conversation history',
+      message: (error as Error).message 
+    });
+  }
+});
+
+app.get('/api/conversation/sessions', (req, res) => {
+  try {
+    const sessions = speechService.getActiveSessions();
+    return res.json({ sessions });
+  } catch (error) {
+    return res.status(500).json({ 
+      error: 'Failed to get active sessions',
       message: (error as Error).message 
     });
   }
@@ -195,7 +246,7 @@ app.post('/upload-audio', upload.single('audio'), (req, res) => {
     }
 
     // TODO: Implement Google Cloud Speech-to-Text integration
-    res.json({ 
+    return res.json({ 
       message: 'Audio file received successfully',
       filename: req.file.originalname,
       size: req.file.size,
@@ -203,7 +254,7 @@ app.post('/upload-audio', upload.single('audio'), (req, res) => {
     });
   } catch (error) {
     console.error('Error processing audio upload:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    return res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -216,18 +267,22 @@ app.post('/process-speech', upload.single('audio'), async (req, res) => {
 
     console.log('Processing speech for file:', req.file.originalname);
     
-    // Process the voice interaction
-    const result = await speechService.processVoiceInteraction(req.file.buffer);
+    // Get session ID from request body or create new one
+    const sessionId = req.body.sessionId;
     
-    res.json({
+    // Process the voice interaction
+    const result = await speechService.processVoiceInteraction(req.file.buffer, 48000, sessionId);
+    
+    return res.json({
       success: true,
       transcription: result.transcription,
       response: result.response,
-      audioResponse: result.audioResponse.toString('base64')
+      audioResponse: result.audioResponse.toString('base64'),
+      sessionId: result.sessionId
     });
   } catch (error) {
     console.error('Error processing speech:', error);
-    res.status(500).json({ 
+    return res.status(500).json({ 
       error: error instanceof Error ? error.message : 'Internal server error' 
     });
   }
@@ -237,10 +292,11 @@ app.post('/process-speech', upload.single('audio'), async (req, res) => {
 io.on('connection', (socket) => {
   console.log('Client connected:', socket.id);
 
-  socket.on('audio-data', async (data: { audio: string; sampleRate?: number }) => {
+  socket.on('audio-data', async (data: { audio: string; sampleRate?: number; sessionId?: string }) => {
     try {
       console.log('Received audio data from client:', socket.id);
       console.log('Audio data length:', data.audio.length);
+      console.log('Session ID:', data.sessionId || 'new session');
       
       // Convert base64 audio to buffer
       const audioBuffer = Buffer.from(data.audio, 'base64');
@@ -249,17 +305,19 @@ io.on('connection', (socket) => {
       // Emit processing status
       socket.emit('processing', { status: 'transcribing' });
       
-      // Process the voice interaction
+      // Process the voice interaction with session context
       console.log('Starting speech processing...');
       const result = await speechService.processVoiceInteraction(
         audioBuffer, 
-        data.sampleRate || 48000
+        data.sampleRate || 48000,
+        data.sessionId
       );
       
       console.log('Speech processing complete:');
       console.log('- Transcription:', result.transcription);
       console.log('- Response length:', result.response.length);
       console.log('- Audio response size:', result.audioResponse.length, 'bytes');
+      console.log('- Session ID:', result.sessionId);
       
       // Send results back to client
       socket.emit('speech-result', {
@@ -267,7 +325,8 @@ io.on('connection', (socket) => {
         response: result.response,
         audioResponse: result.audioResponse.toString('base64'),
         inputAudioUrl: result.inputAudioUrl,
-        outputAudioUrl: result.outputAudioUrl
+        outputAudioUrl: result.outputAudioUrl,
+        sessionId: result.sessionId
       });
       
     } catch (error) {
@@ -315,12 +374,12 @@ app.use((error: any, req: express.Request, res: express.Response, next: express.
     }
   }
   
-  res.status(500).json({ error: 'Something went wrong!' });
+  return res.status(500).json({ error: 'Something went wrong!' });
 });
 
 // 404 handler
 app.use('*', (req, res) => {
-  res.status(404).json({ error: 'Route not found' });
+  return res.status(404).json({ error: 'Route not found' });
 });
 
 // Start server
@@ -351,6 +410,11 @@ server.listen(PORT, async () => {
   } catch (error) {
     console.error(`❌ Failed to test Gemini connection:`, (error as Error).message);
   }
+
+  // Set up session cleanup every 30 minutes
+  setInterval(() => {
+    speechService.cleanupOldSessions();
+  }, 30 * 60 * 1000); // 30 minutes
 });
 
 export default app;
