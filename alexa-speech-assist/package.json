@@ -1,0 +1,52 @@
+{
+  "name": "alexa-speech-assist",
+  "version": "1.0.0",
+  "description": "Node.js TypeScript project for Alexa speech assistance with Google Cloud services",
+  "main": "dist/server.js",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "rimraf dist && tsc",
+    "start": "node dist/server.js",
+    "test-setup": "node test-setup.js"
+  },
+  "keywords": [
+    "alexa",
+    "speech",
+    "assistant",
+    "google-cloud",
+    "typescript"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@google-cloud/speech": "^6.0.1",
+    "@google-cloud/storage": "^7.17.1",
+    "@google-cloud/text-to-speech": "^5.0.0",
+    "@google-cloud/vertexai": "^1.6.0",
+    "@picovoice/porcupine-web": "^3.0.3",
+    "@picovoice/web-voice-processor": "^4.0.9",
+    "axios": "^1.12.2",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "express-rate-limit": "^7.1.5",
+    "helmet": "^7.1.0",
+    "morgan": "^1.10.0",
+    "multer": "^1.4.5-lts.1",
+    "socket.io": "^4.7.4",
+    "uuid": "^9.0.1",
+    "zod": "^3.22.4"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "@types/morgan": "^1.9.9",
+    "@types/multer": "^1.4.11",
+    "@types/node": "^20.10.5",
+    "@types/uuid": "^9.0.7",
+    "rimraf": "^5.0.5",
+    "ts-node": "^10.9.2",
+    "tsx": "^4.6.2",
+    "typescript": "^5.3.3"
+  }
+}
