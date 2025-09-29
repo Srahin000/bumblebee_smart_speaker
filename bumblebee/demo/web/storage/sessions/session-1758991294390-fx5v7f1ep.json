@@ -1,0 +1,17 @@
+{
+  "id": "session-1758991294390-fx5v7f1ep",
+  "createdAt": "2025-09-27T16:41:34.390Z",
+  "lastActivity": "2025-09-27T16:42:05.225Z",
+  "history": [
+    {
+      "timestamp": "2025-09-27T16:41:36.273Z",
+      "user": "My name is Salman.",
+      "assistant": "Hi Salman! It's so nice to meet you! I'm Bumblebee, and I'm super excited to be your new friend! What fun things do you like to do?"
+    },
+    {
+      "timestamp": "2025-09-27T16:42:05.225Z",
+      "user": "My name.",
+      "assistant": "Oh, you want to tell me your name again? That's okay! It's Salman, right? It's super nice to meet you, Salman! What are you up to today?"
+    }
+  ]
+}

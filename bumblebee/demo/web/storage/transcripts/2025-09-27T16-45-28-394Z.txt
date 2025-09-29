@@ -1,0 +1,4 @@
+Timestamp: 2025-09-27T16:45:28.394Z
+Session: session-1758991527516-ohw1uewmd
+Transcription: No speech detected
+Response: I heard some audio but couldn't make out what you said. Please try speaking more clearly.

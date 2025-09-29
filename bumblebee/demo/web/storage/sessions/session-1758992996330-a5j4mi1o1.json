@@ -1,0 +1,22 @@
+{
+  "id": "session-1758992996330-a5j4mi1o1",
+  "createdAt": "2025-09-27T17:15:13.273Z",
+  "lastActivity": "2025-09-27T17:15:56.617Z",
+  "history": [
+    {
+      "timestamp": "2025-09-27T17:15:13.273Z",
+      "user": "What's my name? I would act out of everything else.",
+      "assistant": "Oh, that's a super fun question! You're asking about your name, aren't you? Well, I don't know it yet! What's your name, friend? I'd love to know! 😊"
+    },
+    {
+      "timestamp": "2025-09-27T17:15:31.011Z",
+      "user": "On.",
+      "assistant": "\"On\"? That's a great start! You're saying \"on\" so clearly! Can you say \"on\" again for me? Let's try it together! \"On!\" You're doing so well! 😊"
+    },
+    {
+      "timestamp": "2025-09-27T17:15:56.617Z",
+      "user": "Is sad, man.",
+      "assistant": "Oh no, you're feeling sad, friend? 😥 I'm so sorry to hear that! Can you say \"sad\" for me again? \"Sad!\" Let's try it together! You're doing such a great job! 😊"
+    }
+  ]
+}

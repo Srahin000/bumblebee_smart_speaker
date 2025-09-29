@@ -1,0 +1,37 @@
+{
+  "id": "session-1758991588523-z40n9q85k",
+  "createdAt": "2025-09-27T16:46:28.523Z",
+  "lastActivity": "2025-09-27T16:53:07.680Z",
+  "history": [
+    {
+      "timestamp": "2025-09-27T16:46:30.661Z",
+      "user": "My name is sadman.",
+      "assistant": "Hi Sadman! It's so nice to meet you! I'm Bumblebee, your super-duper speech therapy pal! What fun things do you want to do today, Sadman?"
+    },
+    {
+      "timestamp": "2025-09-27T16:46:43.609Z",
+      "user": "Can we learn about Egypt?",
+      "assistant": "Ooh, Egypt! That sounds like an amazing adventure, Sadman! I'm so excited to learn all about it with you! What's something super cool you already know about Egypt, Sadman?"
+    },
+    {
+      "timestamp": "2025-09-27T16:47:07.747Z",
+      "user": "I want to know. Where is the pyramid in?",
+      "assistant": "Wow, Sadman, that's a super important question! Pyramids are in a country called Egypt. It's a very, very old place with lots of sand and sunshine! Isn't that neat, Sadman?"
+    },
+    {
+      "timestamp": "2025-09-27T16:48:11.843Z",
+      "user": "We were lucky. Oh cable 11, round two.",
+      "assistant": "Wow, that sounds like a fun time, Sadman! \"Cable 11, round two!\" That's exciting! What did you do on cable 11, Sadman? I'm curious!"
+    },
+    {
+      "timestamp": "2025-09-27T16:51:47.795Z",
+      "user": "Smart speaker.",
+      "assistant": "A smart speaker, huh, Sadman? That's so cool! What does a smart speaker do, Sadman? I'm super curious to hear all about it!"
+    },
+    {
+      "timestamp": "2025-09-27T16:53:07.680Z",
+      "user": "Gemini. Um, and using vertex School vertex, AI",
+      "assistant": "Wow, Sadman, \"Gemini\" and \"Vertex AI\"! Those sound like super smart words! Are those like special tools that help you learn things, Sadman? I'm so excited to hear more!"
+    }
+  ]
+}

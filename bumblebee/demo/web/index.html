@@ -1,0 +1,506 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simple Voice Assistant</title>
+    <script src="node_modules/@picovoice/web-voice-processor/dist/iife/index.js"></script>
+    <script src="node_modules/@picovoice/porcupine-web/dist/iife/index.js"></script>
+    <script type="application/javascript" src="scripts/porcupine.js"></script>
+    <script>
+      const keywordsScript = document.createElement('script');
+      keywordsScript.src = 'keywords/porcupineKeywords.js?t=' + Date.now();
+      document.head.appendChild(keywordsScript);
+    </script>
+    <script>
+      const modelScript = document.createElement('script');
+      modelScript.src = 'models/porcupineModel.js?t=' + Date.now();
+      document.head.appendChild(modelScript);
+    </script>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        max-width: 600px;
+        margin: 50px auto;
+        padding: 20px;
+        background: #f5f5f5;
+      }
+      .container {
+        background: white;
+        padding: 30px;
+        border-radius: 10px;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        text-align: center;
+      }
+      .status {
+        padding: 15px;
+        margin: 20px 0;
+        border-radius: 5px;
+        font-weight: bold;
+      }
+      .idle { background: #e8f5e8; color: #2d5a2d; }
+      .listening { background: #e8f4fd; color: #0d47a1; }
+      .recording { background: #fff3cd; color: #856404; }
+      .processing { background: #d1ecf1; color: #0c5460; }
+      .wake-detected { background: #f3e5f5; color: #4a148c; }
+      button {
+        padding: 12px 24px;
+        margin: 10px;
+        border: none;
+        border-radius: 5px;
+        cursor: pointer;
+        font-size: 16px;
+      }
+      .start-btn { background: #4CAF50; color: white; }
+      .stop-btn { background: #f44336; color: white; }
+      .transcription {
+        margin: 20px 0;
+        padding: 15px;
+        background: #f8f9fa;
+        border-radius: 5px;
+        text-align: left;
+        min-height: 50px;
+      }
+      .response {
+        margin: 20px 0;
+        padding: 15px;
+        background: #e3f2fd;
+        border-radius: 5px;
+        text-align: left;
+        min-height: 50px;
+      }
+      input[type="text"] {
+        width: 100%;
+        padding: 10px;
+        margin: 10px 0;
+        border: 1px solid #ddd;
+        border-radius: 5px;
+      }
+      select {
+        width: 100%;
+        padding: 10px;
+        margin: 10px 0;
+        border: 1px solid #ddd;
+        border-radius: 5px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>🎤 Simple Voice Assistant</h1>
+      <p>Enter your Porcupine access key and select a wake word, then click Start to begin listening.</p>
+      
+      <input type="text" id="accessKey" placeholder="Enter Porcupine Access Key" />
+      
+      <select id="keywords">
+        <option value="0">Select a wake word...</option>
+      </select>
+      
+      <button id="startBtn" class="start-btn">Start Voice Assistant</button>
+      <button id="stopBtn" class="stop-btn" style="display: none;">Stop</button>
+      
+      <div id="status" class="status idle">
+        Enter access key and click Start to begin
+      </div>
+      
+      <div id="transcription" class="transcription" style="display: none;">
+        <strong>You said:</strong> <span id="transcriptionText">-</span>
+      </div>
+      
+      <div id="response" class="response" style="display: none;">
+        <strong>Assistant:</strong> <span id="responseText">-</span>
+      </div>
+    </div>
+
+    <script>
+      // Default Porcupine Access Key - Replace with your own
+      const DEFAULT_ACCESS_KEY = process.env.PORCUPINE_ACCESS_KEY;
+      
+      class SimpleVoiceAssistant {
+        constructor() {
+          this.porcupine = null;
+          this.isListening = false;
+          this.isRecording = false;
+          this.mediaRecorder = null;
+          this.audioChunks = [];
+          this.silenceTimer = null;
+          this.silenceTimeout = 3000; // 3 seconds of silence before auto-stop
+          
+          this.accessKeyInput = document.getElementById('accessKey');
+          this.keywordsSelect = document.getElementById('keywords');
+          this.startBtn = document.getElementById('startBtn');
+          this.stopBtn = document.getElementById('stopBtn');
+          this.status = document.getElementById('status');
+          this.transcription = document.getElementById('transcription');
+          this.transcriptionText = document.getElementById('transcriptionText');
+          this.response = document.getElementById('response');
+          this.responseText = document.getElementById('responseText');
+          
+          this.setupEventListeners();
+          this.populateKeywords();
+          this.setDefaultAccessKey();
+        }
+
+        setDefaultAccessKey() {
+          // Pre-fill the access key field with the default key
+          this.accessKeyInput.value = DEFAULT_ACCESS_KEY;
+        }
+
+        populateKeywords() {
+          // Wait for keywords to load
+          const checkKeywords = () => {
+            if (typeof porcupineKeywords !== 'undefined' && porcupineKeywords.length > 0) {
+              this.keywordsSelect.innerHTML = '<option value="0">Select a wake word...</option>';
+              porcupineKeywords.forEach((keyword, index) => {
+                const option = document.createElement('option');
+                option.value = index;
+                option.textContent = keyword.label || keyword;
+                this.keywordsSelect.appendChild(option);
+              });
+            } else {
+              setTimeout(checkKeywords, 100);
+            }
+          };
+          checkKeywords();
+        }
+
+        setupEventListeners() {
+          this.startBtn.addEventListener('click', () => this.startAssistant());
+          this.stopBtn.addEventListener('click', () => this.stopAssistant());
+        }
+
+        async startAssistant() {
+          const accessKey = this.accessKeyInput.value.trim();
+          const keywordIndex = parseInt(this.keywordsSelect.value);
+          
+          if (!accessKey) {
+            this.updateStatus('Please enter a Porcupine access key', 'idle');
+            return;
+          }
+          
+          if (keywordIndex === 0) {
+            this.updateStatus('Please select a wake word', 'idle');
+            return;
+          }
+
+          try {
+            this.updateStatus('Initializing voice assistant...', 'processing');
+            
+            // Initialize Porcupine with built-in keywords
+            const keyword = porcupineKeywords[keywordIndex];
+            let keywordConfig;
+            
+            if (keyword.publicPath === "builtin") {
+              // Use built-in keyword
+              keywordConfig = PorcupineWeb.BuiltInKeyword[keyword.customWritePath];
+            } else {
+              // Use custom keyword file
+              keywordConfig = keyword;
+            }
+            
+            this.porcupine = await PorcupineWeb.PorcupineWorker.create(
+              accessKey,
+              [keywordConfig],
+              (detection) => this.onWakeWordDetected(detection),
+              porcupineModel
+            );
+
+            // Start WebVoiceProcessor
+            await window.WebVoiceProcessor.WebVoiceProcessor.subscribe(this.porcupine);
+            
+            this.isListening = true;
+            this.startBtn.style.display = 'none';
+            this.stopBtn.style.display = 'inline-block';
+            this.updateStatus('Listening for wake word...', 'listening');
+            
+          } catch (error) {
+            console.error('Error starting assistant:', error);
+            this.updateStatus('Error: ' + error.message, 'idle');
+          }
+        }
+
+        async stopAssistant() {
+          try {
+            if (this.porcupine) {
+              await window.WebVoiceProcessor.WebVoiceProcessor.unsubscribe(this.porcupine);
+              await this.porcupine.terminate();
+              this.porcupine = null;
+            }
+            
+            this.isListening = false;
+            this.stopRecording();
+            this.startBtn.style.display = 'inline-block';
+            this.stopBtn.style.display = 'none';
+            this.updateStatus('Voice assistant stopped', 'idle');
+            this.hideTranscription();
+            this.hideResponse();
+            
+          } catch (error) {
+            console.error('Error stopping assistant:', error);
+            this.updateStatus('Error stopping assistant: ' + error.message, 'idle');
+          }
+        }
+
+        onWakeWordDetected(detection) {
+          console.log('Wake word detected:', detection);
+          this.updateStatus('Wake word detected! Speak now...', 'wake-detected');
+          
+          // Start recording after wake word detection
+          setTimeout(() => {
+            this.startRecording();
+          }, 500);
+        }
+
+        async startRecording() {
+          if (this.isRecording) return;
+
+          try {
+            this.updateStatus('Recording... Speak now (auto-stops after 3s silence)', 'recording');
+            
+            const stream = await navigator.mediaDevices.getUserMedia({ 
+              audio: {
+                sampleRate: 48000,
+                channelCount: 1,
+                echoCancellation: true,
+                noiseSuppression: true,
+                autoGainControl: true
+              } 
+            });
+
+            // Use WebM format everywhere for consistency
+            this.mediaRecorder = new MediaRecorder(stream, {
+              mimeType: 'audio/webm;codecs=opus',
+              audioBitsPerSecond: 128000
+            });
+
+            this.audioChunks = [];
+            this.mediaRecorder.ondataavailable = (event) => {
+              this.audioChunks.push(event.data);
+              this.resetSilenceTimer();
+            };
+
+            this.mediaRecorder.onstop = () => {
+              this.processAudio();
+              stream.getTracks().forEach(track => track.stop());
+              this.clearSilenceTimer();
+            };
+
+            this.mediaRecorder.start();
+            this.isRecording = true;
+            this.resetSilenceTimer();
+            
+          } catch (error) {
+            console.error('Error accessing microphone:', error);
+            this.updateStatus('Microphone access denied', 'idle');
+          }
+        }
+
+        stopRecording() {
+          if (!this.isRecording || !this.mediaRecorder) return;
+
+          this.clearSilenceTimer();
+          this.mediaRecorder.stop();
+          this.isRecording = false;
+          this.updateStatus('Processing speech...', 'processing');
+        }
+
+        resetSilenceTimer() {
+          this.clearSilenceTimer();
+          this.silenceTimer = setTimeout(() => {
+            console.log('Silence detected, stopping recording...');
+            this.stopRecording();
+          }, this.silenceTimeout);
+        }
+
+        clearSilenceTimer() {
+          if (this.silenceTimer) {
+            clearTimeout(this.silenceTimer);
+            this.silenceTimer = null;
+          }
+        }
+
+        async processAudio() {
+          // Use WebM format consistently
+          const audioBlob = new Blob(this.audioChunks, { type: 'audio/webm;codecs=opus' });
+          console.log(`Audio blob size: ${audioBlob.size} bytes, format: audio/webm;codecs=opus`);
+          
+          try {
+            // Send audio to the speech processing API
+            await this.processSpeechWithAPI(audioBlob);
+          } catch (error) {
+            console.error('Error processing speech:', error);
+            this.updateStatus('Error processing speech. Please try again.', 'idle');
+            this.showError('Failed to process speech: ' + error.message);
+          }
+        }
+
+        async processSpeechWithAPI(audioBlob) {
+          try {
+            this.updateStatus('Processing speech with AI...', 'processing');
+            
+            // Create FormData to send the audio file
+            const formData = new FormData();
+            formData.append('audio', audioBlob, 'recording.webm');
+            
+            // Send to our speech processing API
+            const response = await fetch('http://localhost:3001/api/process-speech', {
+              method: 'POST',
+              body: formData
+            });
+            
+            if (!response.ok) {
+              throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            
+            const result = await response.json();
+            
+            if (result.success) {
+              // Send to ngrok endpoint (fire and forget)
+              this.sendToNgrok(result.transcription, audioBlob);
+              
+              // Display transcription and response
+              this.showTranscription(result.transcription);
+              this.showResponse(result.response);
+              
+              // Play the AI-generated audio response
+              if (result.audioResponse) {
+                this.playAudioResponse(result.audioResponse);
+              } else {
+                // Fallback to browser TTS if no audio response
+                this.speakResponse(result.response);
+              }
+              
+              // Resume listening for wake word
+              this.updateStatus('Listening for wake word...', 'listening');
+            } else {
+              throw new Error(result.error || 'Speech processing failed');
+            }
+            
+          } catch (error) {
+            console.error('API Error:', error);
+            throw error;
+          }
+        }
+
+        // Send data to ngrok endpoint (fire and forget)
+        async sendToNgrok(text, audioBlob) {
+          try {
+            // Ngrok URL - change this when your ngrok URL changes
+            const ngrokUrl = 'https://11e30cc8826b.ngrok-free.app';
+            
+            // Send health check GET request
+            fetch(`${ngrokUrl}/health`, {
+              method: 'GET'
+            }).catch(error => {
+              console.log('Ngrok health check failed (non-blocking):', error.message);
+            });
+            
+            // Send analyze POST request with data (matching Flask backend format)
+            const formData = new FormData();
+            formData.append('transcript', text);  // Flask expects 'transcript'
+            formData.append('audio', audioBlob, 'recording.webm');  // Flask expects 'audio'
+            
+            fetch(`${ngrokUrl}/analyze`, {
+              method: 'POST',
+              body: formData
+            }).catch(error => {
+              console.log('Ngrok analyze call failed (non-blocking):', error.message);
+            });
+            
+            console.log('Sent to ngrok:', { transcript: text, fileSize: audioBlob.size });
+          } catch (error) {
+            console.log('Error sending to ngrok (non-blocking):', error.message);
+          }
+        }
+
+        showTranscription(text) {
+          this.transcriptionText.textContent = text;
+          this.transcription.style.display = 'block';
+        }
+
+        showResponse(text) {
+          this.responseText.textContent = text;
+          this.response.style.display = 'block';
+        }
+
+        hideTranscription() {
+          this.transcription.style.display = 'none';
+        }
+
+        hideResponse() {
+          this.response.style.display = 'none';
+        }
+
+        playAudioResponse(base64Audio) {
+          try {
+            const audio = new Audio(`data:audio/mp3;base64,${base64Audio}`);
+            audio.play().catch(error => {
+              console.error('Error playing audio:', error);
+              // Fallback to browser TTS if audio playback fails
+              this.speakResponse(this.responseText.textContent);
+            });
+          } catch (error) {
+            console.error('Error creating audio object:', error);
+            // Fallback to browser TTS
+            this.speakResponse(this.responseText.textContent);
+          }
+        }
+
+        speakResponse(text) {
+          // Use Web Speech API for text-to-speech
+          if ('speechSynthesis' in window) {
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.rate = 0.9;
+            utterance.pitch = 1;
+            utterance.volume = 0.8;
+            speechSynthesis.speak(utterance);
+          }
+        }
+
+        showError(message) {
+          // Create or update error display
+          let errorDiv = document.getElementById('error');
+          if (!errorDiv) {
+            errorDiv = document.createElement('div');
+            errorDiv.id = 'error';
+            errorDiv.style.cssText = `
+              background: #f8d7da;
+              color: #721c24;
+              border: 1px solid #f5c6cb;
+              padding: 15px;
+              border-radius: 5px;
+              margin: 20px 0;
+              text-align: center;
+            `;
+            // Use the container element we already have
+            const container = document.querySelector('.container');
+            if (container) {
+              container.appendChild(errorDiv);
+            } else {
+              document.body.appendChild(errorDiv);
+            }
+          }
+          
+          errorDiv.textContent = message;
+          errorDiv.style.display = 'block';
+          
+          // Auto-hide after 5 seconds
+          setTimeout(() => {
+            errorDiv.style.display = 'none';
+          }, 5000);
+        }
+
+        updateStatus(message, type) {
+          this.status.textContent = message;
+          this.status.className = `status ${type}`;
+        }
+      }
+
+      // Initialize the voice assistant when the page loads
+      let voiceAssistant;
+      window.addEventListener('load', () => {
+        voiceAssistant = new SimpleVoiceAssistant();
+      });
+    </script>
+  </body>
+</html>
